@@ -30,6 +30,8 @@ const (
 	cacheControl             = "CacheControl"
 	deleteSnapshotOptions    = "DeleteSnapshotOptions"
 	defaultGetBlobRetryCount = 10
+	listMarker = "ListMarker"
+	defaultListResult = 5
 )
 
 // AzureBlobStorage allows saving blobs to an Azure Blob Storage account
@@ -47,6 +49,7 @@ type blobStorageMetadata struct {
 	DecodeBase64      string `json:"decodeBase64"`
 	GetBlobRetryCount int    `json:"getBlobRetryCount"`
 	PublicAccessLevel string `json:"publicAccessLevel"`
+	ListMaxResult	  int 	 `json:"listMaxResult"`
 }
 
 type createResponse struct {
@@ -102,11 +105,15 @@ func (a *AzureBlobStorage) parseMetadata(metadata bindings.Metadata) (*blobStora
 		m.GetBlobRetryCount = defaultGetBlobRetryCount
 	}
 
+	if m.ListMaxResult == 0 {
+		m.ListMaxResult = defaultListResult
+	}
+
 	return &m, nil
 }
 
 func (a *AzureBlobStorage) Operations() []bindings.OperationKind {
-	return []bindings.OperationKind{bindings.CreateOperation, bindings.GetOperation, bindings.DeleteOperation}
+	return []bindings.OperationKind{bindings.CreateOperation, bindings.GetOperation, bindings.DeleteOperation, bindings.ListOperation}
 }
 
 func (a *AzureBlobStorage) create(blobURL azblob.BlockBlobURL, req *bindings.InvokeRequest) (*bindings.InvokeResponse, error) {
@@ -201,6 +208,25 @@ func (a *AzureBlobStorage) delete(blobURL azblob.BlockBlobURL, req *bindings.Inv
 	return nil, err
 }
 
+func (a *AzureBlobStorage) list(containerURL azblob.ContainerURL, req *bindings.InvokeRequest) (*bindings.InvokeResponse, error){
+	markerValue := req.Metadata[listMarker]
+	marker := azblob.Marker{Val: &markerValue}
+
+	resp, err := containerURL.ListBlobsFlatSegment(context.TODO(), marker, azblob.ListBlobsSegmentOptions{MaxResults: int32(a.metadata.ListMaxResult)} )
+	if err != nil{
+		return nil, fmt.Errorf("error listing az container :%s",err)
+	}
+
+	b, err := json.Marshal(resp)
+	if err != nil{
+		return nil, fmt.Errorf("error reading az container list: %s", err)
+	}
+
+	return &bindings.InvokeResponse{
+		Data: b,
+	}, nil
+}
+
 func (a *AzureBlobStorage) Invoke(req *bindings.InvokeRequest) (*bindings.InvokeResponse, error) {
 	name := ""
 	if val, ok := req.Metadata[blobName]; ok && val != "" {
@@ -219,7 +245,7 @@ func (a *AzureBlobStorage) Invoke(req *bindings.InvokeRequest) (*bindings.Invoke
 	case bindings.DeleteOperation:
 		return a.delete(blobURL, req)
 	case bindings.ListOperation:
-		fallthrough
+		return a.list(a.containerURL, req)
 	default:
 		return nil, fmt.Errorf("unsupported operation %s", req.Operation)
 	}
