@@ -180,7 +180,7 @@ func (a *AzureServiceBusQueues) Read(handler func(*bindings.ReadResponse) ([]byt
 
 func (a *AzureServiceBusQueues) Close() error {
 	if err := a.client.Close(context.Background()); err != nil{
-		a.logger.Errorf("servicebus queue error: failed to close clinet: %v", err)
+		a.logger.Errorf("servicebus queue error: failed to close client: %v", err)
 
 		return err
 	}
